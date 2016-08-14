@@ -98,6 +98,22 @@ const utils = module.exports = exports = {
     }, tradleUtils.omit(opts, 'encryption'))
 
     return new tradle.node(nodeOpts)
+  },
+
+  tlsKey: function tlsKey (keys) {
+    return tradleUtils.find(keys, k => k.get('purpose') === 'tls').priv
+  },
+
+  tlsPubKey: function tlsKey (pubkeys) {
+    const pk = tradleUtils.find(pubkeys, k => k.purpose === 'tls').pub
+    return new Buffer(pk, 'hex')
+  },
+
+  pairs: function pairs (arr) {
+    return arr.map(a => {
+      return arr.filter(b => b !== a).map(b => [a, b])
+    })
+    .reduce((all, next) => all.concat(next))
   }
 }
 

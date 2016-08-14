@@ -4,7 +4,7 @@ const through = require('through2')
 const eos = require('end-of-stream')
 const duplexify = require('duplexify')
 const lps = require('length-prefixed-stream')
-// const wire = require('@tradle/wire')
+const Wire = require('@tradle/wire')
 
 module.exports = {
   createClient,
@@ -13,22 +13,21 @@ module.exports = {
 
 function createClient (opts) {
   const connection = opts.path ? net.connect(opts.path, opts.port) : net.connect(opts.port)
-  const wrapper = wrapConnection(connection)
-  return wrapper
+  return createWire(connection, opts)
 }
 
 function createServer (opts) {
-  var connections = []
+  var wires = []
   const server = net.createServer(function (connection) {
-    const wrapper = wrapConnection(connection)
-    connections.push(wrapper)
+    const wire = createWire(connection, opts)
+    wires.push(wire)
 
-    eos(wrapper, () => {
-      connections = connections.filter(c => c !== wrapper)
+    eos(wire, () => {
+      wires = wires.filter(c => c !== wire)
     })
 
-    wrapper.on('error', err => server.emit('error', err))
-    wrapper.on('data', data => server.emit('data', data))
+    wire.on('error', err => server.emit('error', err))
+    wire.on('message', data => server.emit('message', data))
 
     server.emit('client', connection)
   })
@@ -36,23 +35,33 @@ function createServer (opts) {
   server.listen(opts.port)
   server.send = function (data, cb) {
     // hack for testing
-    connections[0].send(data, cb)
+    wires[0].send(data, cb)
   }
 
   return server
 }
 
-function wrapConnection (connection) {
+function createWire (connection, opts) {
+  return opts.key ? createEncryptedWire(connection, opts) : createCleartextWire(connection, opts)
+}
+
+function createEncryptedWire (connection, opts) {
+  const wire = new Wire({
+    identity: opts.key,
+    theirIdentity: opts.theirPubKey
+  })
+
+  wire.pipe(connection).pipe(wire)
+  return wire
+}
+
+function createCleartextWire (connection, opts) {
   const encode = lps.encode()
   const decode = lps.decode()
   encode.pipe(connection).pipe(decode)
 
   const wrapper = duplexify.obj(encode, decode)
-  wrapper.send = function (data, cb) {
-    wrapper.write(data, cb)
-  }
-
-  // re-emit 'data' as 'message'
-  // wrapper.on('data', data => wrapper.emit('message', data))
+  wrapper.on('data', data => wrapper.emit('message', data))
+  wrapper.send = wrapper.write
   return wrapper
 }
