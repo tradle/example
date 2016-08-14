@@ -76,8 +76,10 @@ function connectTCP (alice, bob) {
     aliceServer.send(data, cb)
   }
 
-  aliceServer.on('message', data => {
-    alice.receive(data, bob._recipientOpts, logErr)
+  aliceServer.on('message', function (data, from) {
+    if (!TLS_ENABLED) from = bob._recipientOpts
+
+    alice.receive(data, from, logErr)
   })
 
   aliceServer.on('error', console.error)
@@ -95,7 +97,8 @@ function connectTCP (alice, bob) {
     bobClient.send(data, cb)
   }
 
-  bobClient.on('message', data => {
+  // dedicated wire to talk to alice
+  bobClient.on('message', function (data) {
     bob.receive(data, alice._recipientOpts, logErr)
   })
 }

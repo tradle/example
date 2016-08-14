@@ -18,6 +18,7 @@ function createClient (opts) {
 
 function createServer (opts) {
   var wires = []
+  const tlsEnabled = !!opts.key
   const server = net.createServer(function (connection) {
     const wire = createWire(connection, opts)
     wires.push(wire)
@@ -27,7 +28,18 @@ function createServer (opts) {
     })
 
     wire.on('error', err => server.emit('error', err))
-    wire.on('message', data => server.emit('message', data))
+    wire.on('handshake', handshake => wire.acceptHandshake(handshake))
+    wire.on('message', data => {
+      if (!tlsEnabled) return server.emit('message', data)
+
+      const pubKey = {
+        type: 'ec',
+        curve: 'curve25519',
+        pub: wire._theirIdentityKey
+      }
+
+      server.emit('message', data, { pubKey })
+    })
 
     server.emit('client', connection)
   })
