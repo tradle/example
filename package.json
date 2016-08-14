@@ -25,6 +25,9 @@
     "mkdirp": "^0.5.1",
     "nkey-bitcoin": "^1.1.1",
     "nkey-ec": "^2.0.1",
+    "sendy": "^2.2.0",
+    "sendy-axolotl": "^1.0.1",
+    "sendy-ws": "^1.4.0",
     "through2": "^2.0.1",
     "write-file-atomic": "^1.1.4",
     "xtend": "^4.0.1"

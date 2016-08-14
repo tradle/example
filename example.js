@@ -5,6 +5,7 @@ const leveldown = require('leveldown')
 const async = require('async')
 const utils = require('./utils')
 const debug = require('./debug')
+const setupWS = require('./ws-stack')
 const TLS_ENABLED = true
 
 const aliceOpts = {
@@ -41,7 +42,16 @@ async.map([
   meet([alice, bob], err => {
     if (err) throw err
 
-    haveFun(alice, bob)
+    alice.on('message', function (message) {
+      console.log('alice received a message from bob', message)
+    })
+
+    bob.on('message', function (message) {
+      console.log('bob received a message from alice', message)
+    })
+
+    haveTCPFun(alice, bob)
+    // haveWebsocketsFun(alice, bob)
   })
 })
 
@@ -54,7 +64,7 @@ function meet (nodes, cb) {
   }, cb)
 }
 
-function haveFun (alice, bob) {
+function connectTCP (alice, bob) {
   const aliceServer = tcp.createServer({
     port: 12345,
     // TLS using axolotl
@@ -72,10 +82,6 @@ function haveFun (alice, bob) {
 
   aliceServer.on('error', console.error)
 
-  alice.on('message', function (message) {
-    console.log('alice received a message from bob', message)
-  })
-
   const bobClient = tcp.createClient({
     port: 12345,
     // TLS using axolotl
@@ -92,11 +98,35 @@ function haveFun (alice, bob) {
   bobClient.on('message', data => {
     bob.receive(data, alice._recipientOpts, logErr)
   })
+}
 
-  bob.on('message', function (message) {
-    console.log('bob received a message from alice', message)
-  })
+function connectWebSockets (alice, bob) {
+  const url = 'ws://localhost:42824'
+  connect(url, alice)
+  connect(url, bob)
 
+  function connect (url, node) {
+    const setup = setupWS(node)
+    const stack = setup.networkingStack({
+      url: url,
+      tls: TLS_ENABLED
+    })
+
+    // stack.on('error', logErr)
+  }
+}
+
+function haveWebsocketsFun (alice, bob) {
+  connectWebSockets(alice, bob)
+  chat(alice, bob)
+}
+
+function haveTCPFun (alice, bob) {
+  connectTCP(alice, bob)
+  chat(alice, bob)
+}
+
+function chat (alice, bob) {
   alice.signAndSend({
     to: bob._recipientOpts,
     object: {
@@ -123,5 +153,8 @@ function logErr (err) {
   if (err) {
     console.error(err)
     console.error(err.stack)
+    if (err.tfError) {
+      console.error(err.tfError.stack)
+    }
   }
 }
