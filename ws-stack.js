@@ -1,9 +1,11 @@
+const querystring = require('querystring')
 const TLSClient = require('sendy-axolotl')
 const Sendy = require('sendy')
 const SendyWS = require('sendy-ws')
 const newSwitchboard = SendyWS.Switchboard
 const WebSocketClient = SendyWS.Client
 const tradle = require('@tradle/engine')
+const debug = require('./debug')
 // const utils = require('./utils')
 
 module.exports = function createConnector (node) {
@@ -29,7 +31,10 @@ module.exports = function createConnector (node) {
     },
 
     networkingStack: function (opts) {
-      const url = opts.url
+      const url = opts.url + '?' + querystring.stringify({
+        from: connector.myIdentifier()
+      })
+
       const tlsEnabled = opts.tls
       const webSocketClient = new WebSocketClient({
         url: url,

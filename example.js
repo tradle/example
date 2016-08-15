@@ -1,18 +1,25 @@
 
-const tcp = require('./tcp')
 const path = require('path')
 const leveldown = require('leveldown')
 const async = require('async')
+const tradle = require('@tradle/engine')
 const utils = require('./utils')
 const debug = require('./debug')
 const setupWS = require('./ws-stack')
-const TLS_ENABLED = true
+const TLS_ENABLED = false
+const relayURL = 'ws://localhost:42824'
+
+process.on('uncaughtException', function (e) {
+  logErr(e)
+  process.exit(1)
+})
 
 const aliceOpts = {
+  name: 'alice',
   networkName: 'testnet',
   dir: path.join(process.env.HOME, '.tradle/alice'),
   encryption: {
-    password: 'pets-car-health-separate-even-head-baloney'
+    key: new Buffer('32a663553a35474af72f69b5ea5504b2c56dc91300f8fdf965c926e98b1bbd3b', 'hex')
   },
   // every 10 mins
   syncInterval: 300000,
@@ -20,10 +27,11 @@ const aliceOpts = {
 }
 
 const bobOpts = {
+  name: 'bob',
   networkName: 'testnet',
   dir: path.join(process.env.HOME, '.tradle/bob'),
   encryption: {
-    password: 'insecure-mercury-moon-dog-apple-rainbow-nash'
+    key: new Buffer('d7d2d648aed2790dcc29fd9721c427ede02a6c298092e5b4820731b8d7dd730e', 'hex')
   },
   // every 10 mins
   syncInterval: 300000,
@@ -50,8 +58,9 @@ async.map([
       console.log('bob received a message from alice', message)
     })
 
-    haveTCPFun(alice, bob)
-    // haveWebsocketsFun(alice, bob)
+    connectToRelay(alice, relayURL)
+    connectToRelay(bob, relayURL)
+    haveFun(alice, bob)
   })
 })
 
@@ -64,67 +73,23 @@ function meet (nodes, cb) {
   }, cb)
 }
 
-function connectTCP (alice, bob) {
-  const aliceServer = tcp.createServer({
-    port: 12345,
-    // TLS using axolotl
-    key: TLS_ENABLED && utils.tlsKey(alice.keys)
+function connectToRelay (node, url) {
+  const setup = setupWS(node)
+  const stack = setup.networkingStack({
+    url: url,
+    tls: TLS_ENABLED
   })
 
-  alice._send = aliceServer.send
-
-  aliceServer.on('message', function (data, from) {
-    if (!TLS_ENABLED) from = bob._recipientOpts
-
-    alice.receive(data, from, logErr)
+  stack.webSocketClient.on('connect', function () {
+    debug(node.name + ' connected')
   })
 
-  aliceServer.on('error', console.error)
-
-  const bobClient = tcp.createClient({
-    port: 12345,
-    // TLS using axolotl
-    key: TLS_ENABLED && utils.tlsKey(bob.keys),
-    theirPubKey: TLS_ENABLED && utils.tlsPubKey(alice.identity.pubkeys)
-  })
-
-  bobClient.on('error', console.error)
-
-  bob._send = bobClient.send
-
-  // dedicated wire to talk to alice
-  bobClient.on('message', function (data) {
-    bob.receive(data, alice._recipientOpts, logErr)
+  stack.webSocketClient.on('disconnect', function () {
+    debug(node.name + ' disconnected')
   })
 }
 
-function connectWebSockets (alice, bob) {
-  const url = 'ws://localhost:42824'
-  connect(url, alice)
-  connect(url, bob)
-
-  function connect (url, node) {
-    const setup = setupWS(node)
-    const stack = setup.networkingStack({
-      url: url,
-      tls: TLS_ENABLED
-    })
-
-    // stack.on('error', logErr)
-  }
-}
-
-function haveWebsocketsFun (alice, bob) {
-  connectWebSockets(alice, bob)
-  chat(alice, bob)
-}
-
-function haveTCPFun (alice, bob) {
-  connectTCP(alice, bob)
-  chat(alice, bob)
-}
-
-function chat (alice, bob) {
+function haveFun (alice, bob) {
   alice.signAndSend({
     to: bob._recipientOpts,
     object: {
@@ -141,11 +106,6 @@ function chat (alice, bob) {
     }
   }, logErr)
 }
-
-process.on('uncaughtException', function (e) {
-  logErr(e)
-  process.exit(1)
-})
 
 function logErr (err) {
   if (err) {
