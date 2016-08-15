@@ -68,13 +68,10 @@ function connectTCP (alice, bob) {
   const aliceServer = tcp.createServer({
     port: 12345,
     // TLS using axolotl
-    key: TLS_ENABLED && utils.tlsKey(alice.keys),
-    theirPubKey: TLS_ENABLED && utils.tlsPubKey(bob.identity.pubkeys)
+    key: TLS_ENABLED && utils.tlsKey(alice.keys)
   })
 
-  alice._send = function (data, recipient, cb) {
-    aliceServer.send(data, cb)
-  }
+  alice._send = aliceServer.send
 
   aliceServer.on('message', function (data, from) {
     if (!TLS_ENABLED) from = bob._recipientOpts
@@ -93,9 +90,7 @@ function connectTCP (alice, bob) {
 
   bobClient.on('error', console.error)
 
-  bob._send = function (data, recipient, cb) {
-    bobClient.send(data, cb)
-  }
+  bob._send = bobClient.send
 
   // dedicated wire to talk to alice
   bobClient.on('message', function (data) {

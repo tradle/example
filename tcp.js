@@ -5,6 +5,7 @@ const eos = require('end-of-stream')
 const duplexify = require('duplexify')
 const lps = require('length-prefixed-stream')
 const Wire = require('@tradle/wire')
+const utils = require('./utils')
 
 module.exports = {
   createClient,
@@ -18,36 +19,52 @@ function createClient (opts) {
 
 function createServer (opts) {
   var wires = []
+  var pubKeyToWire = {}
   const tlsEnabled = !!opts.key
   const server = net.createServer(function (connection) {
+    var pubKey
     const wire = createWire(connection, opts)
     wires.push(wire)
 
     eos(wire, () => {
       wires = wires.filter(c => c !== wire)
+      if (pubKey) delete pubKeyToWire[pubKey]
     })
 
     wire.on('error', err => server.emit('error', err))
-    wire.on('handshake', handshake => wire.acceptHandshake(handshake))
+
+    wire.on('handshake', handshake => {
+      pubKey = {
+        type: 'ec',
+        curve: 'curve25519',
+        pub: handshake.staticKey
+      }
+
+      pubKeyToWire[handshake.staticKey.toString('hex')] = wire
+      wire.acceptHandshake(handshake)
+    })
+
     wire.on('message', data => {
       if (!tlsEnabled) return server.emit('message', data)
 
-      const pubKey = {
-        type: 'ec',
-        curve: 'curve25519',
-        pub: wire._theirIdentityKey
-      }
-
       server.emit('message', data, { pubKey })
     })
-
-    server.emit('client', connection)
   })
 
   server.listen(opts.port)
-  server.send = function (data, cb) {
+  server.send = function (data, recipient, cb) {
     // hack for testing
-    wires[0].send(data, cb)
+    if (!tlsEnabled) {
+      // without authentication, we have no idea
+      // who we're talking to
+      return wires.forEach(w => w.send(data, cb))
+    }
+
+    const pubKey = utils.tlsPubKey(recipient.object.pubkeys)
+    const wire = pubKeyToWire[pubKey.toString('hex')]
+    if (!wire) return cb(new Error('recipient not found'))
+
+    wire.send(data, cb)
   }
 
   return server
