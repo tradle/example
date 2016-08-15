@@ -8,7 +8,7 @@
   },
   "keywords": [],
   "author": "Mark Vayngrib <mark@tradle.io> (http://github.com/mvayngrib)",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@tradle/cb-blockr": "tradle/cb-blockr",
     "@tradle/engine": "^2.4.0",
