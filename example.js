@@ -3,11 +3,14 @@ const path = require('path')
 const leveldown = require('leveldown')
 const async = require('async')
 const tradle = require('@tradle/engine')
+const operator = require('@tradle/ws-operator')
 const utils = require('./utils')
 const debug = require('./debug')
-const setupWS = require('./ws-stack')
 const TLS_ENABLED = false
 const relayURL = 'ws://localhost:42824'
+
+console.log(`connecting to relay at ${relayURL}`)
+console.log('run `node relay.js` in another tab (if you haven\'t already)')
 
 process.on('uncaughtException', function (e) {
   logErr(e)
@@ -58,8 +61,15 @@ async.map([
       console.log('bob received a message from alice', message)
     })
 
-    connectToRelay(alice, relayURL)
-    connectToRelay(bob, relayURL)
+    const aliceOperator = operator.install({ node: alice, tls: TLS_ENABLED })
+    const bobOperator = operator.install({ node: bob, tls: TLS_ENABLED })
+
+    aliceOperator.addHost({ url: relayURL })
+    bobOperator.addHost({ url: relayURL })
+
+    aliceOperator.addEntry(relayURL, operator.identifier(bob.identityInfo, TLS_ENABLED))
+    bobOperator.addEntry(relayURL, operator.identifier(alice.identityInfo, TLS_ENABLED))
+
     haveFun(alice, bob)
   })
 })
@@ -73,21 +83,21 @@ function meet (nodes, cb) {
   }, cb)
 }
 
-function connectToRelay (node, url) {
-  const setup = setupWS(node)
-  const stack = setup.networkingStack({
-    url: url,
-    tls: TLS_ENABLED
-  })
+// function connectToRelay (node, url) {
+//   const setup = setupWS({ node, tls: TLS_ENABLED })
+//   const stack = setup.networkingStack({
+//     url: url,
+//     tls: TLS_ENABLED
+//   })
 
-  stack.webSocketClient.on('connect', function () {
-    debug(node.name + ' connected')
-  })
+//   stack.webSocketClient.on('connect', function () {
+//     debug(node.name + ' connected')
+//   })
 
-  stack.webSocketClient.on('disconnect', function () {
-    debug(node.name + ' disconnected')
-  })
-}
+//   stack.webSocketClient.on('disconnect', function () {
+//     debug(node.name + ' disconnected')
+//   })
+// }
 
 function haveFun (alice, bob) {
   alice.signAndSend({

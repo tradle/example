@@ -6,115 +6,128 @@ const writeFile = require('write-file-atomic')
 // fork of cb-blockr
 const Blockr = require('@tradle/cb-blockr')
 const tradle = require('@tradle/engine')
-const tradleUtils = tradle.utils
+const utils = tradle.utils
 const createKeeper = require('@tradle/keeper')
 const Wallet = require('@tradle/simple-wallet')
 const debug = require('./debug')
 
-const utils = module.exports = exports = {
-  load: function load (opts, cb) {
-    // ensure async
-    const dir = opts.dir
-    debug('attempting to load account from ' + dir)
-    process.nextTick(function () {
-      var err
-      try {
-        opts = extend(opts, {
-          keys: require(getKeysPath(dir)),
-          identity: require(getIdentityPath(dir))
-        })
+module.exports = exports = {
+  load,
+  genNewIdentity,
+  loadOrGen,
+  createNode,
+  tlsKey,
+  tlsPubKey,
+  pairs
+}
 
-        debug('loaded account from ' + dir)
-      } catch (e) {
-        err = e
-        debug('failed to load account from ' + dir)
-      }
-
-      if (err) cb(err)
-      else cb(null, opts)
-    })
-  },
-
-  genNewIdentity: function genNewIdentity (opts, cb) {
-    const dir = opts.dir
-    debug('generating a new account in ' + opts.dir)
-
+function load (opts, cb) {
+  // ensure async
+  const dir = opts.dir
+  debug('attempting to load account from ' + dir)
+  process.nextTick(function () {
+    var err
     try {
-      mkdirp.sync(dir)
-    } catch (err) {
-      debug('mkdir failed', err)
-      return process.nextTick(() => cb(err))
+      opts = extend(opts, {
+        keys: require(getKeysPath(dir)),
+        identity: require(getIdentityPath(dir))
+      })
+
+      debug('loaded account from ' + dir)
+    } catch (e) {
+      err = e
+      debug('failed to load account from ' + dir)
     }
 
-    tradleUtils.newIdentity(opts, function (err, result) {
-      if (err) {
-        debug('failed to generate account', err)
-        return cb(err)
-      }
+    if (err) cb(err)
+    else cb(null, opts)
+  })
+}
 
-      try {
-        writeFile.sync(getKeysPath(dir), JSON.stringify(result.keys))
-        writeFile.sync(getIdentityPath(dir), JSON.stringify(result.identity))
-      } catch (err) {
-        debug('failed to write account data', err)
-        return cb(err)
-      }
+function genNewIdentity (opts, cb) {
+  const dir = opts.dir
+  debug('generating a new account in ' + opts.dir)
 
-      debug('generated account in ' + dir)
-      cb(null, extend(opts, result))
-    })
-  },
-
-  loadOrGen: function loadOrGen (opts, cb) {
-    utils.load(opts, function (err, result) {
-      if (!err) return cb(null, result)
-
-      utils.genNewIdentity(opts, function (err, result) {
-        if (err) return cb(err)
-
-        cb(null, result)
-      })
-    })
-  },
-
-  createNode: function createNode (opts) {
-    const keeper = createKeeper({
-      path: getKeeperPath(opts.dir),
-      encryption: opts.encryption,
-      db: opts.leveldown
-    })
-
-    const blockchain = opts.blockchain || new Blockr(opts.networkName)
-    const transactor = opts.transactor || Wallet.transactor({
-      networkName: opts.networkName,
-      priv: tradleUtils.chainKey(opts.keys).priv,
-      blockchain: blockchain
-    })
-
-    const nodeOpts = extend({
-      keeper,
-      transactor,
-      blockchain
-    }, tradleUtils.omit(opts, 'encryption'))
-
-    return new tradle.node(nodeOpts)
-  },
-
-  tlsKey: function tlsKey (keys) {
-    return tradleUtils.find(keys, k => k.get('purpose') === 'tls').priv
-  },
-
-  tlsPubKey: function tlsKey (pubkeys) {
-    const pk = tradleUtils.find(pubkeys, k => k.purpose === 'tls').pub
-    return new Buffer(pk, 'hex')
-  },
-
-  pairs: function pairs (arr) {
-    return arr.map(a => {
-      return arr.filter(b => b !== a).map(b => [a, b])
-    })
-    .reduce((all, next) => all.concat(next))
+  try {
+    mkdirp.sync(dir)
+  } catch (err) {
+    debug('mkdir failed', err)
+    return process.nextTick(() => cb(err))
   }
+
+  utils.newIdentity(opts, function (err, result) {
+    if (err) {
+      debug('failed to generate account', err)
+      return cb(err)
+    }
+
+    try {
+      writeFile.sync(getKeysPath(dir), JSON.stringify(result.keys))
+      writeFile.sync(getIdentityPath(dir), JSON.stringify(result.identity))
+    } catch (err) {
+      debug('failed to write account data', err)
+      return cb(err)
+    }
+
+    debug('generated account in ' + dir)
+    cb(null, extend(opts, result))
+  })
+}
+
+function loadOrGen (opts, cb) {
+  load(opts, function (err, result) {
+    if (!err) return cb(null, result)
+
+    genNewIdentity(opts, function (err, result) {
+      if (err) return cb(err)
+
+      cb(null, result)
+    })
+  })
+}
+
+function createNode (opts) {
+  const keeper = createKeeper({
+    path: getKeeperPath(opts.dir),
+    encryption: opts.encryption,
+    db: opts.leveldown
+  })
+
+  const blockchain = opts.blockchain || new Blockr(opts.networkName)
+  const transactor = opts.transactor || Wallet.transactor({
+    networkName: opts.networkName,
+    priv: utils.chainKey(opts.keys).priv,
+    blockchain: blockchain
+  })
+
+  const nodeOpts = extend({
+    keeper,
+    transactor,
+    blockchain
+  }, utils.omit(opts, 'encryption'))
+
+  return new tradle.node(nodeOpts)
+}
+
+function tlsKey (keys) {
+  return utils.find(keys, k => k.get('purpose') === 'tls').priv
+}
+
+function tlsPubKey (keys) {
+  const pk = utils.find(keys, k => {
+    const purpose = k.purpose || k.get('purpose')
+    return purpose === 'tls'
+  })
+
+  const str = pk.pubKeyString || pk.pub
+  return new Buffer(pk, 'hex')
+}
+
+function pairs (arr) {
+  return arr.map(a => {
+    return arr.filter(b => b !== a).map(b => [a, b])
+  })
+  .reduce((all, next) => all.concat(next))
 }
 
 function getIdentityPath (dir) {
